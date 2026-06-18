@@ -1,13 +1,23 @@
 // Get the signed-in user's emails for the inbox.
 //
-// Gmail works in two steps:
-//   1. Get a list of email IDs (just "tickets" — no subject/sender yet).
-//   2. For each ID, ask Gmail for that email's real details.
-// So we do exactly that, then return a tidy list for the UI.
+// 1. Read from Corsair local DB when already synced (fast, no API calls).
+// 2. On first load, fetch from Gmail (full message), sync to DB, then serve.
+//    Later visits for the same user hit the DB only.
 
 import { corsair } from "../corsair";
 import { auth } from "@clerk/nextjs/server";
 import { classifyEmail, type EmailPriority } from "../email/email-classify";
+
+const INBOX_LIMIT = 20;
+
+export type InboxEmail = {
+  id?: string;
+  subject?: string;
+  from?: string;
+  snippet?: string;
+  date: number;
+  priority: EmailPriority;
+};
 
 // Shape of a single email's full detail (used by the click-to-open drawer).
 export interface EmailDetail {
@@ -137,34 +147,155 @@ function collectBodies(payload?: MessagePart): { plain: string; html: string } {
   return { plain, html };
 }
 
-export default async function getEmails() {
-  // 1. Who is logged in?
+function headerValue(
+  headers: { name?: string; value?: string }[] | undefined,
+  name: string
+): string | undefined {
+  return headers?.find((h) => h.name === name)?.value;
+}
+
+function mapToInboxEmail(m: {
+  id?: string;
+  subject?: string;
+  from?: string;
+  snippet?: string;
+  internalDate?: string | number;
+  labelIds?: string[];
+}): InboxEmail {
+  return {
+    id: m.id,
+    subject: m.subject,
+    from: m.from,
+    snippet: m.snippet,
+    date: m.internalDate ? Number(m.internalDate) : 0,
+    priority: classifyEmail({
+      subject: m.subject,
+      snippet: m.snippet,
+      labels: m.labelIds,
+    }),
+  };
+}
+
+type GmailApiMessage = Awaited<
+  ReturnType<ReturnType<typeof corsair.withTenant>["gmail"]["api"]["messages"]["get"]>
+>;
+
+/** Persist a Gmail message into Corsair's local DB for fast reads later. */
+async function syncMessageToDb(
+  tenant: ReturnType<typeof corsair.withTenant>,
+  msg: GmailApiMessage
+) {
+  if (!msg.id) return;
+
+  const headers = msg.payload?.headers;
+  const { plain } = collectBodies(msg.payload as MessagePart | undefined);
+
+  await tenant.gmail.db.messages.upsertByEntityId(msg.id, {
+    id: msg.id,
+    threadId: msg.threadId,
+    labelIds: msg.labelIds,
+    snippet: msg.snippet,
+    internalDate: msg.internalDate,
+    historyId: msg.historyId,
+    subject: headerValue(headers, "Subject"),
+    from: headerValue(headers, "From"),
+    to: headerValue(headers, "To"),
+    body: plain || undefined,
+    payload: msg.payload,
+  });
+}
+
+function messageToInboxEmail(msg: GmailApiMessage): InboxEmail {
+  const headers = msg.payload?.headers;
+  return mapToInboxEmail({
+    id: msg.id,
+    subject: headerValue(headers, "Subject"),
+    from: headerValue(headers, "From"),
+    snippet: msg.snippet,
+    internalDate: msg.internalDate,
+    labelIds: msg.labelIds,
+  });
+}
+
+/**
+ * Cold path: list inbox from Gmail, fetch full details, sync to local DB,
+ * then return for the UI. Next page load reads from DB only.
+ */
+async function fetchAndSyncFromGmail(
+  tenant: ReturnType<typeof corsair.withTenant>
+): Promise<InboxEmail[]> {
+  const list = await tenant.gmail.api.messages.list({
+    q: "in:inbox",
+    maxResults: INBOX_LIMIT,
+  });
+
+  const ids = (list.messages ?? [])
+    .map((m) => m.id)
+    .filter((id): id is string => Boolean(id));
+
+  if (ids.length === 0) return [];
+
+  const details = await Promise.all(
+    ids.map((id) =>
+      tenant.gmail.api.messages.get({
+        id,
+        format: "full",
+      })
+    )
+  );
+
+  // Write to local DB so the same user doesn't need API calls on the next visit.
+  await Promise.all(details.map((msg) => syncMessageToDb(tenant, msg)));
+
+  return details.map(messageToInboxEmail).sort((a, b) => b.date - a.date);
+}
+
+/** Fast path: read previously synced messages from Corsair DB. */
+async function fetchEmailsFromDb(
+  tenant: ReturnType<typeof corsair.withTenant>
+): Promise<InboxEmail[]> {
+  const rows = await tenant.gmail.db.messages.search({ limit: INBOX_LIMIT });
+  return rows
+    .map(({ data: m }) =>
+      mapToInboxEmail({
+        id: m.id,
+        subject: m.subject,
+        from: m.from,
+        snippet: m.snippet,
+        internalDate: m.internalDate,
+        labelIds: m.labelIds,
+      })
+    )
+    .sort((a, b) => b.date - a.date);
+}
+
+export default async function getEmails(): Promise<InboxEmail[]> {
   const { userId } = await auth();
   if (!userId) return [];
 
   const tenant = corsair.withTenant(userId);
 
-  // 2. Read straight from Corsair's local DB. It has already synced the
-  //    messages, so subject/from/snippet/date are right here — no Gmail API
-  //    round-trips needed. (One DB query instead of N slow network calls.)
-  const rows = await tenant.gmail.db.messages.search({ limit: 20 });
+  try {
+    const refreshToken = await tenant.gmail.keys.get_refresh_token();
+    if (!refreshToken) return [];
+  } catch {
+    return [];
+  }
 
-  // 3. Shape each row for the UI and sort newest-first.
-  return rows
-    .map(({ data: m }) => ({
-      id: m.id,
-      subject: m.subject,
-      from: m.from,
-      snippet: m.snippet,
-      // internalDate is epoch milliseconds (stored as a string).
-      date: m.internalDate ? Number(m.internalDate) : 0,
-      priority: classifyEmail({
-        subject: m.subject,
-        snippet: m.snippet,
-        labels: m.labelIds,
-      }),
-    }))
-    .sort((a, b) => b.date - a.date);
+  // 1. Local DB first — no Gmail API calls if we already synced for this user.
+  try {
+    const cached = await fetchEmailsFromDb(tenant);
+    if (cached.length > 0) return cached;
+  } catch {
+    // DB miss — fall through to live fetch.
+  }
+
+  // 2. First visit (or empty cache): fetch from Gmail, sync to DB, return.
+  try {
+    return await fetchAndSyncFromGmail(tenant);
+  } catch {
+    return [];
+  }
 }
 
 // Just the emails that actually deserve attention, for the dashboard overview.
@@ -220,8 +351,9 @@ export async function getEmailDetails(id: string): Promise<EmailDetail | null> {
     }
   }
 
-  // 2. Fallback: fetch the full message from Gmail (single network call).
+  // 2. Fallback: fetch the full message from Gmail, sync to DB, return.
   const email = await tenant.gmail.api.messages.get({ id, format: "full" });
+  await syncMessageToDb(tenant, email);
 
   const headers = email.payload?.headers ?? [];
   const header = (name: string) =>

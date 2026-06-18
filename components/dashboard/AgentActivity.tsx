@@ -15,6 +15,7 @@ import {
   XCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { parseAgentOutcomes } from "@/lib/ai/parse-agent-outcomes"
 
 type ToolPart = Extract<UIMessage["parts"][number], { type: string }>
 
@@ -68,6 +69,31 @@ function stepStatus(part: ToolPart): StepStatus {
 
 function metaFor(part: ToolPart) {
   const name = isToolUIPart(part) ? getToolName(part) : "tool"
+
+  if (
+    name === "run_script" &&
+    isToolUIPart(part) &&
+    part.state === "output-available"
+  ) {
+    const [outcome] = parseAgentOutcomes([part])
+    if (outcome?.type === "email-sent") {
+      return {
+        label: "Email sent",
+        description: outcome.subject
+          ? `Delivered: ${outcome.subject}`
+          : "Message delivered through Gmail",
+        icon: Terminal,
+      }
+    }
+    if (outcome?.type === "meeting-scheduled") {
+      return {
+        label: "Meeting scheduled",
+        description: outcome.title ?? "Added to Google Calendar",
+        icon: Terminal,
+      }
+    }
+  }
+
   return (
     TOOL_META[name] ?? {
       label: name.replace(/_/g, " "),
@@ -180,7 +206,7 @@ export function AgentActivityTimeline({
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-          Mcaly is working
+          {running ? "Mcaly is working" : "Mcaly finished"}
         </p>
         <span className="rounded-full bg-background/80 px-2 py-0.5 text-xs text-muted-foreground">
           {doneCount}/{toolParts.length} steps

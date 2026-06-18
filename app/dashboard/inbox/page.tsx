@@ -8,7 +8,10 @@
 import { AskMcalyBar } from "@/components/dashboard/AskMcalyBar"
 import { InboxList } from "@/components/dashboard/InboxList"
 import type { InboxItemData } from "@/components/dashboard/InboxItem"
+import { Button } from "@/components/ui/button"
 import getEmails from "@/lib/dashboard/get-emails"
+import { getConnectionStatus } from "@/lib/connections"
+import Link from "next/link"
 
 export default async function InboxPage({
   // Next.js passes the URL's query string here. In Next 15+/16 it's a Promise,
@@ -20,7 +23,7 @@ export default async function InboxPage({
 }) {
   const { email: initialEmailId } = await searchParams
 
-  // Fetch + classify emails for the signed-in user.
+  const connections = await getConnectionStatus()
   const emails = await getEmails()
 
   // Adapter: turn a raw email from getEmails() into the shape the UI needs.
@@ -64,10 +67,21 @@ export default async function InboxPage({
         initialEmailId={initialEmailId}
       />
 
-      {/* Friendly empty state when there are no emails at all */}
-      {emails.length === 0 && (
+      {/* Empty states */}
+      {emails.length === 0 && !connections.gmail && (
+        <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-6 py-10 text-center">
+          <p className="text-sm font-medium text-foreground">Gmail not connected</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Connect your Gmail account to see your inbox here.
+          </p>
+          <Button asChild className="mt-4 rounded-full">
+            <Link href="/api/connect?plugin=gmail">Connect Gmail</Link>
+          </Button>
+        </div>
+      )}
+      {emails.length === 0 && connections.gmail && (
         <p className="px-1 text-sm text-muted-foreground">
-          No emails to show yet.
+          Your Gmail inbox is empty — no messages to show.
         </p>
       )}
     </div>

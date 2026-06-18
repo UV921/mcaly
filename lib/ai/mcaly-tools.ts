@@ -14,6 +14,7 @@ import { auth } from "@clerk/nextjs/server"
 import { tool, type ToolSet } from "ai"
 import { z } from "zod"
 import { corsair } from "@/lib/corsair"
+import { scheduleMeeting } from "@/lib/ai/schedule-meeting"
 
 export async function getMcalyTools(): Promise<ToolSet> {
   const { userId } = await auth()
@@ -55,6 +56,58 @@ export async function getMcalyTools(): Promise<ToolSet> {
       },
     })
   }
+
+  // Reliable calendar scheduling — avoids run_script format mistakes (Bad Request).
+  tools.schedule_meeting = tool({
+    description:
+      "Schedule a Google Calendar event with attendees. Use this whenever the user wants to book, create, or schedule a meeting. IST = timeZone Asia/Kolkata.",
+    inputSchema: z.object({
+      title: z.string().describe("Meeting title / summary"),
+      year: z.number().int(),
+      month: z.number().int().min(1).max(12),
+      day: z.number().int().min(1).max(31),
+      hour: z.number().int().min(0).max(23).describe("Hour in 24h local time"),
+      minute: z.number().int().min(0).max(59).optional().default(0),
+      durationMinutes: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .default(60)
+        .describe("Meeting length in minutes"),
+      timeZone: z
+        .string()
+        .optional()
+        .default("Asia/Kolkata")
+        .describe("IANA timezone, e.g. Asia/Kolkata for IST"),
+      attendeeEmails: z
+        .array(z.string().email())
+        .min(1)
+        .describe("Guest email addresses"),
+      description: z.string().optional(),
+    }),
+    execute: async (input) => {
+      try {
+        const event = await scheduleMeeting(userId, input)
+        return JSON.stringify(
+          {
+            success: true,
+            summary: event.summary,
+            start: event.start,
+            end: event.end,
+            htmlLink: event.htmlLink,
+            hangoutLink: event.hangoutLink,
+            attendees: event.attendees?.map((a) => a.email),
+          },
+          null,
+          2
+        )
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        return `ERROR: ${message}`
+      }
+    },
+  })
 
   return tools
 }

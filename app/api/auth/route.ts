@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
             state,
             redirectUri: REDIRECT_URI,
         });
+
         const response = NextResponse.redirect(new URL("/onboarding", request.url))
         response.cookies.delete("oauth_state");
         return response;

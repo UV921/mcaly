@@ -15,9 +15,11 @@ import {
   AgentActivityTimeline,
   AgentWorkingPlaceholder,
 } from "@/components/dashboard/AgentActivity"
+import { AgentOutcomeCards } from "@/components/dashboard/AgentOutcomes"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
+import { parseAgentOutcomes } from "@/lib/ai/parse-agent-outcomes"
 
 interface AskMcalyChatProps {
   initialPrompt?: string
@@ -33,6 +35,8 @@ function AssistantMessage({
   const textParts = message.parts.filter((p) => p.type === "text" && p.text.trim())
   const toolParts = message.parts.filter(isToolUIPart)
   const hasText = textParts.length > 0
+  const outcomes = parseAgentOutcomes(message.parts)
+  const showOutcomes = outcomes.length > 0 && !live
 
   return (
     <div className="flex gap-3 justify-start">
@@ -45,6 +49,9 @@ function AssistantMessage({
         {toolParts.length > 0 && (
           <AgentActivityTimeline parts={message.parts} live={live} />
         )}
+
+        {/* Completed actions — email sent, meeting booked */}
+        {showOutcomes && <AgentOutcomeCards outcomes={outcomes} live={live} />}
 
         {/* Final text reply */}
         {hasText && (
