@@ -1,26 +1,269 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-serif);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  /* === BACKGROUND COLORS === */
+  /* Soft white + gold blend for the main app background (warm cream) */
+  --background: oklch(0.975 0.018 88);
+  /* Dark text color for readability on light backgrounds */
+  --foreground: oklch(0.15 0.01 270);
+
+  /* === CARD/CONTAINER COLORS === */
+  /* Warm white cards that sit on the gold-cream background and pop slightly */
+  --card: oklch(0.995 0.006 88);
+  /* Text color on cards */
+  --card-foreground: oklch(0.15 0.01 270);
+
+  /* === POPOVER/DROPDOWN COLORS === */
+  /* Background for popovers and dropdowns */
+  --popover: oklch(0.99 0.002 85);
+  /* Text in popovers */
+  --popover-foreground: oklch(0.15 0.01 270);
+
+  /* === PRIMARY COLOR (Main Accent) === */
+  /* Warm gold/yellow - used for buttons, highlights, primary actions */
+  /* This is the dominant accent from the dashboard design */
+  --primary: oklch(0.78 0.12 85);
+  /* Dark text on gold buttons for contrast */
+  --primary-foreground: oklch(0.2 0.01 270);
+
+  /* === SECONDARY COLOR === */
+  /* Soft light beige - used for secondary buttons and muted elements */
+  --secondary: oklch(0.94 0.008 82);
+  /* Dark text on secondary elements */
+  --secondary-foreground: oklch(0.2 0.01 270);
+
+  /* === MUTED COLORS === */
+  /* Light gray for disabled states and muted text */
+  --muted: oklch(0.92 0.006 82);
+  /* Gray text for muted foreground */
+  --muted-foreground: oklch(0.55 0.01 270);
+
+  /* === ACCENT COLOR === */
+  /* Soft beige for hover states and subtle highlights */
+  --accent: oklch(0.94 0.008 82);
+  /* Dark text on accents */
+  --accent-foreground: oklch(0.2 0.01 270);
+
+  /* === DESTRUCTIVE COLOR === */
+  /* Red for error states and destructive actions */
+  --destructive: oklch(0.65 0.18 35);
+
+  /* === BORDERS AND INPUTS === */
+  /* Light border color for dividers and input borders */
+  --border: oklch(0.9 0.006 82);
+  /* Input field background */
+  --input: oklch(0.95 0.004 85);
+  /* Focus ring color - gold accent */
+  --ring: oklch(0.78 0.12 85);
+
+  /* === BORDER RADIUS === */
+  /* Smooth rounded corners for modern look */
+  --radius: 1rem;
+
+  /* === CHART COLORS === */
+  /* Primary chart color - gold */
+  --chart-1: oklch(0.78 0.12 85);
+  /* Secondary chart - teal */
+  --chart-2: oklch(0.68 0.08 200);
+  /* Tertiary chart - blue */
+  --chart-3: oklch(0.62 0.08 250);
+  /* Quaternary chart - orange */
+  --chart-4: oklch(0.75 0.1 50);
+  /* Quinary chart - red */
+  --chart-5: oklch(0.65 0.12 30);
+
+  /* === SIDEBAR COLORS === */
+  /* Light background for sidebar */
+  --sidebar: oklch(0.99 0.002 85);
+  /* Dark text in sidebar */
+  --sidebar-foreground: oklch(0.15 0.01 270);
+  /* Gold accent for active sidebar items */
+  --sidebar-primary: oklch(0.78 0.12 85);
+  /* Dark text on active items */
+  --sidebar-primary-foreground: oklch(0.2 0.01 270);
+  /* Light background for sidebar hover states */
+  --sidebar-accent: oklch(0.94 0.008 82);
+  /* Text on hover states */
+  --sidebar-accent-foreground: oklch(0.15 0.01 270);
+  /* Border color in sidebar */
+  --sidebar-border: oklch(0.9 0.006 82);
+  /* Focus ring in sidebar */
+  --sidebar-ring: oklch(0.78 0.12 85);
+}
+
+.dark {
+  /* === DARK MODE BACKGROUND COLORS === */
+  /* Very dark charcoal background matching the dashboard dark theme */
+  --background: oklch(0.12 0 0);
+  /* Light text on dark background */
+  --foreground: oklch(0.95 0 0);
+  
+  /* === DARK MODE CARD COLORS === */
+  /* Slightly lighter dark card background */
+  --card: oklch(0.18 0 0);
+  /* Light text on cards */
+  --card-foreground: oklch(0.95 0 0);
+  
+  /* === DARK MODE POPOVER === */
+  /* Same as card background */
+  --popover: oklch(0.18 0 0);
+  /* Light text in popovers */
+  --popover-foreground: oklch(0.95 0 0);
+  
+  /* === DARK MODE PRIMARY (Gold Accent) === */
+  /* Bright gold for buttons and actions on dark background */
+  --primary: oklch(0.82 0.12 85);
+  /* Dark text on gold buttons */
+  --primary-foreground: oklch(0.15 0 0);
+  
+  /* === DARK MODE SECONDARY === */
+  /* Dark gray for secondary elements */
+  --secondary: oklch(0.28 0 0);
+  /* Light text on secondary */
+  --secondary-foreground: oklch(0.95 0 0);
+  
+  /* === DARK MODE MUTED === */
+  /* Medium gray for muted elements */
+  --muted: oklch(0.35 0 0);
+  /* Light gray text for muted foreground */
+  --muted-foreground: oklch(0.7 0 0);
+  
+  /* === DARK MODE ACCENT === */
+  /* Dark gray for hover states and subtle highlights */
+  --accent: oklch(0.28 0 0);
+  /* Light text on accents */
+  --accent-foreground: oklch(0.95 0 0);
+  
+  /* === DARK MODE DESTRUCTIVE === */
+  /* Red for errors */
+  --destructive: oklch(0.72 0.18 35);
+  
+  /* === DARK MODE BORDERS AND INPUTS === */
+  /* Subtle border with opacity */
+  --border: oklch(1 0 0 / 12%);
+  /* Dark input background */
+  --input: oklch(0.22 0 0);
+  /* Gold focus ring */
+  --ring: oklch(0.82 0.12 85);
+  
+  /* === DARK MODE CHART COLORS === */
+  /* Gold - primary chart */
+  --chart-1: oklch(0.82 0.12 85);
+  /* Teal - secondary */
+  --chart-2: oklch(0.72 0.08 200);
+  /* Blue - tertiary */
+  --chart-3: oklch(0.65 0.08 250);
+  /* Orange - quaternary */
+  --chart-4: oklch(0.8 0.1 50);
+  /* Red - quinary */
+  --chart-5: oklch(0.7 0.12 30);
+  
+  /* === DARK MODE SIDEBAR === */
+  /* Dark background for sidebar */
+  --sidebar: oklch(0.15 0 0);
+  /* Light text in sidebar */
+  --sidebar-foreground: oklch(0.95 0 0);
+  /* Gold for active sidebar items */
+  --sidebar-primary: oklch(0.82 0.12 85);
+  /* Dark text on active items */
+  --sidebar-primary-foreground: oklch(0.15 0 0);
+  /* Hover state - slightly lighter */
+  --sidebar-accent: oklch(0.28 0 0);
+  /* Light text on hover */
+  --sidebar-accent-foreground: oklch(0.95 0 0);
+  /* Subtle border in sidebar */
+  --sidebar-border: oklch(1 0 0 / 12%);
+  /* Gold focus ring in sidebar */
+  --sidebar-ring: oklch(0.82 0.12 85);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  .font-serif {
+    font-family: var(--font-serif), ui-serif, Georgia, serif;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Clerk sign-in / sign-up modal — Mcaly branding overrides */
+.cl-card {
+  border-radius: 28px !important;
+  border: 1px solid oklch(0.9 0.006 82) !important;
+  box-shadow: 0 24px 48px oklch(0.78 0.12 85 / 0.08) !important;
+}
+.dark .cl-card {
+  border-color: oklch(1 0 0 / 12%) !important;
+  box-shadow: 0 24px 48px oklch(0 0 0 / 0.4) !important;
+}
+.cl-headerTitle {
+  font-family: var(--font-serif), ui-serif, Georgia, serif !important;
+  font-weight: 600 !important;
+}
+.cl-formButtonPrimary {
+  border-radius: 9999px !important;
+  font-weight: 600 !important;
+}
+.cl-socialButtonsBlockButton {
+  border-radius: 1rem !important;
+}
+.cl-formFieldInput {
+  border-radius: 1rem !important;
+}
+.cl-footerActionLink {
+  font-weight: 500 !important;
 }
