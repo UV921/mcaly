@@ -9,6 +9,7 @@
 // It's a CLIENT component because it's interactive (open/close + fetch on open).
 
 import { useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import {
   Sparkles,
   Mail,
@@ -16,6 +17,9 @@ import {
   CalendarPlus,
   CheckCircle2,
   Clock,
+  Loader2,
+  ExternalLink,
+  Send,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { EmailPriority } from "@/lib/email/email-classify"
@@ -29,7 +33,8 @@ import {
 } from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { loadEmailDetail ,loadEmailSummary} from "@/app/dashboard/inbox/actions"
+import { cn } from "@/lib/utils"
+import { loadEmailDetail, loadEmailSummary, sendInboxReply } from "@/app/dashboard/inbox/actions"
 import type { EmailDetail } from "@/lib/dashboard/get-emails"
 
 
@@ -138,22 +143,134 @@ function parseSender(from?: string) {
   return { name: from.trim(), email: from.trim() }
 }
 
+function replySubject(subject?: string): string {
+  if (!subject?.trim()) return "Re:"
+  if (/^re:/i.test(subject.trim())) return subject.trim()
+  return `Re: ${subject.trim()}`
+}
+
+function gmailThreadLink(threadId?: string, subject?: string) {
+  if (threadId) {
+    return `https://mail.google.com/mail/u/0/#inbox/${threadId}`
+  }
+  if (subject) {
+    return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(subject)}`
+  }
+  return "https://mail.google.com/mail/u/0/#inbox"
+}
+
+interface SentReplyState {
+  to: string
+  subject: string
+  body: string
+  threadId?: string
+}
+
+function ReplySentCard({
+  sent,
+  onDone,
+}: {
+  sent: SentReplyState
+  onDone: () => void
+}) {
+  const gmailLink = gmailThreadLink(sent.threadId, sent.subject)
+
+  return (
+    <section
+      className={cn(
+        "overflow-hidden rounded-3xl border border-[#C4A035]/25",
+        "bg-gradient-to-br from-[#C4A035]/12 via-background to-chart-2/5 shadow-sm",
+        "animate-in fade-in slide-in-from-bottom-3 duration-500"
+      )}
+    >
+      <div className="p-5">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#C4A035]/15 text-[#C4A035]">
+            <CheckCircle2 className="h-6 w-6" />
+          </div>
+
+          <div className="min-w-0 flex-1 space-y-3">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-base font-semibold text-foreground">Reply sent</p>
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#C4A035]/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#9A7B1A] dark:text-[#E8D48B]">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Delivered
+                </span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Your reply went out through Gmail. You&apos;re all set on this thread.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="rounded-2xl border border-border/60 bg-background/80 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  To
+                </p>
+                <p className="mt-0.5 text-sm font-medium text-foreground">{sent.to}</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/80 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Subject
+                </p>
+                <p className="mt-0.5 text-sm font-medium text-foreground">{sent.subject}</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/80 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Your reply
+                </p>
+                <p className="mt-0.5 line-clamp-4 whitespace-pre-wrap text-sm text-foreground/90">
+                  {sent.body}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button asChild size="sm" className="rounded-full">
+                <a href={gmailLink} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-4 w-4" />
+                  Open in Gmail
+                </a>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="rounded-full"
+                onClick={onDone}
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export function EmailDetailDrawer({
   emailId,
   open,
   onOpenChange,
 }: EmailDetailDrawerProps) {
+  const router = useRouter()
   // The fetched email detail (null until loaded).
   const [detail, setDetail] = useState<EmailDetail | null>(null)
   // Loading flag so we can show a skeleton while fetching.
   const [loading, setLoading] = useState(false)
   // The editable reply text (placeholder until Step 6 fills it with AI).
   const [reply, setReply] = useState("")
-  const[summary,setSummary] = useState<EmailSummary|null>(null)
-  const [summaryLoading,setSummaryLoading] = useState(false)
+  const [summary, setSummary] = useState<EmailSummary | null>(null)
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [sentReply, setSentReply] = useState<SentReplyState | null>(null)
   // Cache summaries by email id so re-opening the same email (or clicking
   // "Summarise" twice) doesn't burn another AI request.
   const summaryCache = useRef<Map<string, EmailSummary>>(new Map())
+  const replySectionRef = useRef<HTMLDivElement>(null)
 
   // When the drawer opens with an id, fetch that email's full detail.
   useEffect(() => {
@@ -164,6 +281,8 @@ export function EmailDetailDrawer({
     setDetail(null)
     setSummary(null)
     setReply("")
+    setSendError(null)
+    setSentReply(null)
 
     loadEmailDetail(emailId)
       .then((data) => {
@@ -206,6 +325,78 @@ export function EmailDetailDrawer({
       setSummary(null)
     } finally {
       setSummaryLoading(false)
+    }
+  }
+
+  const focusReply = () => {
+    replySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+    const textarea = document.getElementById("inbox-reply-textarea")
+    textarea?.focus()
+  }
+
+  const handleReplyAction = async () => {
+    if (!reply.trim() && detail?.body) {
+      await handleSummarise()
+    }
+    focusReply()
+  }
+
+  const handleSendReply = async () => {
+    if (!reply.trim() || !detail || sending || sentReply) return
+
+    const recipient = parseSender(detail.from).email
+    if (!recipient) {
+      setSendError("Could not determine who to reply to.")
+      return
+    }
+
+    const subject = replySubject(detail.subject)
+    const body = reply.trim()
+
+    setSending(true)
+    setSendError(null)
+
+    try {
+      const result = await sendInboxReply({
+        to: recipient,
+        subject,
+        body,
+        threadId: detail.threadId,
+      })
+
+      if (!result.success) {
+        setSendError(result.error)
+        return
+      }
+
+      setSentReply({
+        to: recipient,
+        subject,
+        body,
+        threadId: result.threadId ?? detail.threadId,
+      })
+      replySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    } catch {
+      setSendError("Failed to send reply. Try again.")
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const handleActionClick = async (label: string) => {
+    if (label === "Reply" || label === "Reply now") {
+      await handleReplyAction()
+      return
+    }
+
+    if (label === "Schedule meeting") {
+      onOpenChange(false)
+      router.push("/dashboard/ask")
+      return
+    }
+
+    if (label === "Mark done" || label === "Snooze") {
+      onOpenChange(false)
     }
   }
 
@@ -366,8 +557,8 @@ export function EmailDetailDrawer({
             )}
           </section>
 
-          {/* SECTION 3: suggested actions (quick chips like Reply / Schedule) */}
-          {!loading && (
+          {/* SECTION 3: suggested actions (hidden after send) */}
+          {!loading && !sentReply && (
             <section className="rounded-3xl border border-border bg-card p-5">
               <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                 <Sparkles className="h-4 w-4 text-primary" />
@@ -388,14 +579,17 @@ export function EmailDetailDrawer({
               <div className="flex flex-wrap gap-2">
                 {suggestedActions.map((action) => {
                   const Icon = action.icon
+                  const isReply =
+                    action.label === "Reply" || action.label === "Reply now"
                   return (
-                    // Visual only for now — each will trigger a real action later.
                     <Button
                       key={action.label}
                       variant="secondary"
                       size="sm"
                       className="rounded-full"
                       type="button"
+                      disabled={isReply && (summaryLoading || loading)}
+                      onClick={() => handleActionClick(action.label)}
                     >
                       <Icon className="h-4 w-4" />
                       {action.label}
@@ -406,35 +600,104 @@ export function EmailDetailDrawer({
             </section>
           )}
 
-          {/* SECTION 4: suggested reply (editable, ready for Step 6) */}
-          <section className="rounded-3xl border border-border bg-card p-5">
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
-              <Sparkles className="h-4 w-4 text-primary" />
-              Suggested reply
-            </div>
-            <Textarea
-              value={reply}
-              onChange={(e) => setReply(e.target.value)}
-              placeholder={
-                summaryLoading
-                  ? "Drafting a reply…"
-                  : "AI-suggested reply will appear here. You can edit it before sending."
-              }
-              className="min-h-28"
-            />
-          </section>
+          {sentReply ? (
+            <ReplySentCard sent={sentReply} onDone={() => onOpenChange(false)} />
+          ) : (
+            <section
+              ref={replySectionRef}
+              className={cn(
+                "rounded-3xl border bg-card p-5 transition-colors",
+                sending ? "border-primary/30 bg-primary/5" : "border-border"
+              )}
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  {sending ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  ) : (
+                    <Sparkles className="h-4 w-4 text-primary" />
+                  )}
+                  {sending ? "Sending reply…" : "Suggested reply"}
+                </div>
+                {sending && (
+                  <span className="text-xs text-muted-foreground">Via Gmail</span>
+                )}
+              </div>
+
+              {sending && (
+                <div className="mb-3 h-1 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full w-2/3 animate-pulse rounded-full bg-primary" />
+                </div>
+              )}
+
+              <Textarea
+                id="inbox-reply-textarea"
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                disabled={sending}
+                placeholder={
+                  summaryLoading
+                    ? "Drafting a reply…"
+                    : "AI-suggested reply will appear here. You can edit it before sending."
+                }
+                className="min-h-28"
+              />
+
+              {sendError && (
+                <p className="mt-3 rounded-2xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  {sendError}
+                </p>
+              )}
+            </section>
+          )}
         </div>
 
         <DrawerFooter className="flex-row justify-end gap-2">
-          <DrawerClose asChild>
-            <Button variant="ghost" className="rounded-full">
-              Close
-            </Button>
-          </DrawerClose>
-          {/* Send is visual-only for now (no backend send yet). */}
-          <Button className="rounded-full" type="button" disabled={!reply}>
-            Send reply
-          </Button>
+          {sentReply ? (
+            <>
+              <DrawerClose asChild>
+                <Button variant="ghost" className="rounded-full">
+                  Close
+                </Button>
+              </DrawerClose>
+              <Button asChild className="rounded-full">
+                <a
+                  href={gmailThreadLink(sentReply.threadId, sentReply.subject)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Open in Gmail
+                </a>
+              </Button>
+            </>
+          ) : (
+            <>
+              <DrawerClose asChild>
+                <Button variant="ghost" className="rounded-full" disabled={sending}>
+                  Close
+                </Button>
+              </DrawerClose>
+              <Button
+                className="rounded-full"
+                type="button"
+                disabled={!reply.trim() || sending || loading}
+                onClick={handleSendReply}
+              >
+                {sending ? (
+                  <>
+                    <Loader2 className="animate-spin" />
+                    Sending…
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Send reply
+                  </>
+                )}
+              </Button>
+            </>
+          )}
         </DrawerFooter>
       </DrawerContent>
     </Drawer>

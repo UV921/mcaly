@@ -22,6 +22,7 @@ export type InboxEmail = {
 // Shape of a single email's full detail (used by the click-to-open drawer).
 export interface EmailDetail {
   id?: string;
+  threadId?: string;
   subject?: string;
   snippet?: string;
   from?: string;
@@ -342,6 +343,7 @@ export async function getEmailDetails(id: string): Promise<EmailDetail | null> {
     if (bodyText || html) {
       return {
         id: row.id,
+        threadId: row.threadId,
         subject: row.subject,
         snippet: row.snippet,
         from: row.from,
@@ -376,6 +378,7 @@ export async function getEmailDetails(id: string): Promise<EmailDetail | null> {
 
   return {
     id: email.id,
+    threadId: email.threadId,
     subject,
     snippet,
     from,
