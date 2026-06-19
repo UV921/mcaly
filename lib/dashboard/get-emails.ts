@@ -222,11 +222,12 @@ function messageToInboxEmail(msg: GmailApiMessage): InboxEmail {
  * then return for the UI. Next page load reads from DB only.
  */
 async function fetchAndSyncFromGmail(
-  tenant: ReturnType<typeof corsair.withTenant>
+  tenant: ReturnType<typeof corsair.withTenant>,
+  limit = INBOX_LIMIT
 ): Promise<InboxEmail[]> {
   const list = await tenant.gmail.api.messages.list({
     q: "in:inbox",
-    maxResults: INBOX_LIMIT,
+    maxResults: limit,
   });
 
   const ids = (list.messages ?? [])
@@ -252,9 +253,10 @@ async function fetchAndSyncFromGmail(
 
 /** Fast path: read previously synced messages from Corsair DB. */
 async function fetchEmailsFromDb(
-  tenant: ReturnType<typeof corsair.withTenant>
+  tenant: ReturnType<typeof corsair.withTenant>,
+  limit = INBOX_LIMIT
 ): Promise<InboxEmail[]> {
-  const rows = await tenant.gmail.db.messages.search({ limit: INBOX_LIMIT });
+  const rows = await tenant.gmail.db.messages.search({ limit });
   return rows
     .map(({ data: m }) =>
       mapToInboxEmail({
@@ -272,8 +274,15 @@ async function fetchEmailsFromDb(
 export default async function getEmails(): Promise<InboxEmail[]> {
   const { userId } = await auth();
   if (!userId) return [];
+  return getEmailsForTenant(userId);
+}
 
-  const tenant = corsair.withTenant(userId);
+/** Fetch inbox for any tenant — shared by dashboard and Ask Mcaly agent. */
+export async function getEmailsForTenant(
+  tenantId: string,
+  limit = INBOX_LIMIT
+): Promise<InboxEmail[]> {
+  const tenant = corsair.withTenant(tenantId);
 
   try {
     const refreshToken = await tenant.gmail.keys.get_refresh_token();
@@ -282,17 +291,15 @@ export default async function getEmails(): Promise<InboxEmail[]> {
     return [];
   }
 
-  // 1. Local DB first — no Gmail API calls if we already synced for this user.
   try {
-    const cached = await fetchEmailsFromDb(tenant);
+    const cached = await fetchEmailsFromDb(tenant, limit);
     if (cached.length > 0) return cached;
   } catch {
-    // DB miss — fall through to live fetch.
+    // fall through
   }
 
-  // 2. First visit (or empty cache): fetch from Gmail, sync to DB, return.
   try {
-    return await fetchAndSyncFromGmail(tenant);
+    return await fetchAndSyncFromGmail(tenant, limit);
   } catch {
     return [];
   }

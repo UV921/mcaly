@@ -39,3 +39,10 @@ export const corsairEvents = pgTable('corsair_events', {
     payload: jsonb('payload').notNull().default({}),
     status: text('status'),
 });
+
+export const userSettings = pgTable('user_settings', {
+    userId: text('user_id').primaryKey(),
+    geminiApiKeyEncrypted: text('gemini_api_key_encrypted'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

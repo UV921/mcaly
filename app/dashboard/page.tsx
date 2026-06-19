@@ -10,7 +10,6 @@
 import { AskMcalyBar } from "@/components/dashboard/AskMcalyBar"
 import { Greeting } from "@/components/dashboard/Greeting"
 import { TodayFocus } from "@/components/dashboard/TodayFocus"
-import { SuggestedActions } from "@/components/dashboard/SuggestedActions"
 import { getTodayFocus } from "@/lib/dashboard/get-today-focus"
 
 export default async function DashboardPage() {
@@ -27,9 +26,6 @@ export default async function DashboardPage() {
 
       {/* The calm overview: what can't be skipped, what's worth a look */}
       <TodayFocus focus={focus} />
-
-      {/* Suggested actions strip at the bottom */}
-      <SuggestedActions />
     </div>
   )
 }

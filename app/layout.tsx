@@ -17,9 +17,17 @@ const playfair = Playfair_Display({
 })
 
 export const metadata: Metadata = {
-  title: "Mcaly — Autopilot for your inbox",
+  title: {
+    default: "Mcaly — Autopilot for your inbox",
+    template: "%s · Mcaly",
+  },
   description:
     "AI-first email and calendar workspace. Prioritize your day, ask Mcaly to reply and schedule.",
+  applicationName: "Mcaly",
+  icons: {
+    icon: "/icon",
+    apple: "/apple-icon",
+  },
 }
 
 export default function RootLayout({

@@ -1,11 +1,16 @@
 // DATA LAYER — Google Calendar (range query).
 //
 // One job: fetch calendar events between two dates and return them in our clean
-// MeetingItem shape. Both the dashboard ("today") and the calendar page ("this
-// week", "selected day") build on this single function — no duplicated API code.
+// MeetingItem shape. Both the dashboard ("today") and the calendar page build
+// on this single function — no duplicated API code.
 
 import { corsair } from "../corsair"
 import { auth } from "@clerk/nextjs/server"
+import {
+  DEFAULT_TIMEZONE,
+  parseGoogleEventTime,
+} from "./timezone"
+import { isMcalyMeetingEvent } from "./filter-events"
 
 // The clean shape the rest of the app uses. Optional fields (`?`) mean "might be
 // missing", so callers must handle undefined (with ?? or ?.).
@@ -24,8 +29,9 @@ export interface MeetingItem {
 // Fetch every event between timeMin and timeMax (inclusive-ish), expanding
 // recurring events into individual instances so each occurrence shows up.
 export async function getEventsInRange(
-  timeMin: Date,
-  timeMax: Date
+  timeMinIso: string,
+  timeMaxIso: string,
+  displayTimeZone = DEFAULT_TIMEZONE
 ): Promise<MeetingItem[]> {
   const { userId } = await auth()
   if (!userId) return []
@@ -33,34 +39,49 @@ export async function getEventsInRange(
   const tenant = corsair.withTenant(userId)
 
   try {
-    const res = await tenant.googlecalendar.api.events.getMany({
-      calendarId: "primary",
-      timeMin: timeMin.toISOString(),
-      timeMax: timeMax.toISOString(),
-      singleEvents: true, // expand recurring events into single instances
-      orderBy: "startTime", // requires singleEvents: true
-      maxResults: 100,
-      showDeleted: false,
-    })
+    const allItems: NonNullable<Awaited<ReturnType<typeof tenant.googlecalendar.api.events.getMany>>["items"]> = []
+    let pageToken: string | undefined
 
-    return (res.items ?? [])
+    do {
+      const res = await tenant.googlecalendar.api.events.getMany({
+        calendarId: "primary",
+        timeMin: timeMinIso,
+        timeMax: timeMaxIso,
+        timeZone: displayTimeZone,
+        singleEvents: true,
+        orderBy: "startTime",
+        maxResults: 250,
+        showDeleted: false,
+        showHiddenInvitations: true,
+        pageToken,
+      })
+
+      if (res.items?.length) allItems.push(...res.items)
+      pageToken = res.nextPageToken ?? undefined
+    } while (pageToken)
+
+    return allItems
       .filter((e) => e.status !== "cancelled")
+      .filter((e) => isMcalyMeetingEvent(e))
       .map((e) => {
-        // Timed events have start.dateTime; all-day events only have start.date.
-        const startStr = e.start?.dateTime ?? e.start?.date
-        const endStr = e.end?.dateTime ?? e.end?.date
+        const eventTz = e.start?.timeZone ?? displayTimeZone
 
-        // Show the OTHER people (drop yourself + anyone who declined).
         const names = (e.attendees ?? [])
           .filter((a) => !a.self && a.responseStatus !== "declined")
           .map((a) => a.displayName || a.email)
           .filter((n): n is string => Boolean(n))
 
+        const start = parseGoogleEventTime(
+          e.start?.dateTime,
+          e.start?.date,
+          eventTz
+        )
+
         return {
           id: e.id ?? crypto.randomUUID(),
           title: e.summary ?? "(no title)",
-          start: startStr ? new Date(startStr).getTime() : 0,
-          end: endStr ? new Date(endStr).getTime() : 0,
+          start,
+          end: parseGoogleEventTime(e.end?.dateTime, e.end?.date, eventTz),
           isAllDay: !e.start?.dateTime,
           attendees: names.length ? `with ${names.slice(0, 2).join(" & ")}` : "",
           location: e.location,
@@ -68,8 +89,10 @@ export async function getEventsInRange(
           htmlLink: e.htmlLink,
         }
       })
-  } catch {
-    // Calendar might not be connected/authorized — don't crash the page.
-    return []
+      .filter((e) => e.start > 0)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error("[getEventsInRange]", message)
+    throw new Error(message)
   }
 }

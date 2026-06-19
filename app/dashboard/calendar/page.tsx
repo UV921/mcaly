@@ -1,34 +1,51 @@
-// Calendar page — the "conductor".
-//
-// Async SERVER COMPONENT: it fetches this week's meetings and hands them to the
-// client <CalendarView />, which owns the day-selection interaction. No logic
-// here beyond fetching + composing.
+// Calendar page — server-fetched meetings + client refresh.
 
+import { Suspense } from "react"
 import { AskMcalyBar } from "@/components/dashboard/AskMcalyBar"
 import { CalendarView } from "@/components/calendar/CalendarView"
-import { getThisWeekMeetings } from "@/lib/calendar/getTodayMeetings"
+import { getCalendarMeetings } from "@/lib/calendar/getTodayMeetings"
+import { getConnectionStatus } from "@/lib/connections"
+
+export const dynamic = "force-dynamic"
 
 export default async function CalendarPage() {
-  // One fetch for the whole week; the client filters per selected day.
-  const meetings = await getThisWeekMeetings()
+  const connections = await getConnectionStatus()
+  let meetings: Awaited<ReturnType<typeof getCalendarMeetings>> = []
+  let fetchError: string | null = null
+
+  if (connections.calendar) {
+    try {
+      meetings = await getCalendarMeetings()
+    } catch (err) {
+      fetchError =
+        err instanceof Error ? err.message : "Failed to load calendar"
+    }
+  }
 
   return (
     <div className="space-y-6">
-      {/* Same command bar as the other pages */}
       <AskMcalyBar />
 
-      {/* Page heading */}
       <div className="px-1">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           Calendar
         </h1>
         <p className="mt-2 text-base text-muted-foreground">
-          Your week at a glance — pick a day to see its meetings.
+          Your schedule at a glance — pick a day to see its meetings.
         </p>
       </div>
 
-      {/* Calendar + selected-day meetings + this-week list */}
-      <CalendarView meetings={meetings} />
+      <Suspense
+        fallback={
+          <p className="px-4 text-sm text-muted-foreground">Loading calendar…</p>
+        }
+      >
+        <CalendarView
+          initialMeetings={meetings}
+          initialConnected={connections.calendar}
+          initialError={fetchError}
+        />
+      </Suspense>
     </div>
   )
 }

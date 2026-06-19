@@ -44,6 +44,36 @@ const TOOL_META: Record<
     description: "Reading inbox, sending email, or updating calendar",
     icon: Terminal,
   },
+  check_day_availability: {
+    label: "Checking calendar",
+    description: "Looking at your schedule for that day",
+    icon: Plug,
+  },
+  show_email_draft: {
+    label: "Drafting email",
+    description: "Preparing a message for your review",
+    icon: FileSearch,
+  },
+  show_meeting_draft: {
+    label: "Drafting meeting",
+    description: "Preparing calendar details for your review",
+    icon: FileSearch,
+  },
+  send_email: {
+    label: "Sending email",
+    description: "Delivering your confirmed message",
+    icon: Terminal,
+  },
+  schedule_meeting: {
+    label: "Scheduling meeting",
+    description: "Adding event to Google Calendar",
+    icon: Terminal,
+  },
+  get_inbox_emails: {
+    label: "Reading inbox",
+    description: "Fetching your recent emails",
+    icon: FileSearch,
+  },
 }
 
 type StepStatus = "running" | "done" | "error" | "waiting"
